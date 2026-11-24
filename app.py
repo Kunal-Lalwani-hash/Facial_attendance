@@ -196,6 +196,7 @@ def process_frame():
         if frame is None:
             return jsonify({"faces": [], "event": None, "anti_spoofing": ENABLE_ANTI_SPOOFING})
 
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = detector(gray)
 
@@ -209,7 +210,7 @@ def process_frame():
             verified = False
 
             shape = shape_predictor(gray, face)
-            face_descriptor = np.array(facerec.compute_face_descriptor(frame, shape))
+            face_descriptor = np.array(facerec.compute_face_descriptor(rgb_frame, shape))
 
             # --- Calculate EAR for Blink Detection ---
             left_eye = np.array([(shape.part(i).x, shape.part(i).y) for i in range(36, 42)])
@@ -220,7 +221,7 @@ def process_frame():
                 distances = np.linalg.norm(known_descriptors - face_descriptor, axis=1)
                 min_index = np.argmin(distances)
 
-                if distances[min_index] < 0.45:
+                if distances[min_index] < 0.52:
                     raw_label = names[min_index]
                     roll_no, student_name = parse_label(raw_label)
                     display_label = f"{roll_no} | {student_name}"
@@ -274,11 +275,12 @@ def extract_and_save_features(identifier_key, img_folder):
         img = cv2.imread(img_path)
         if img is None:
             continue
+        rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         faces = detector(gray)
         if len(faces) > 0:
             shape = shape_predictor(gray, faces[0])
-            desc = facerec.compute_face_descriptor(img, shape)
+            desc = facerec.compute_face_descriptor(rgb_img, shape, 5)
             descriptors.append(np.array(desc))
             
     if descriptors:
@@ -289,7 +291,7 @@ def extract_and_save_features(identifier_key, img_folder):
             existing_df = pd.read_csv(csv_path, header=None, index_col=0)
             if label_key in existing_df.index:
                 existing_df = existing_df.drop(label_key)
-            new_row = pd.DataFrame([mean_descriptor], index=[label_key])
+            new_row = pd.DataFrame([mean_descriptor], index=[label_key], columns=existing_df.columns)
             updated_df = pd.concat([existing_df, new_row])
             updated_df.to_csv(csv_path, header=False)
         else:
