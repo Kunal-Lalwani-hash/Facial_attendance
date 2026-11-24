@@ -1,6 +1,6 @@
 Flask
 opencv-python-headless
-dlib
+dlib-bin
 numpy
 pandas
 gunicorn
