@@ -10,9 +10,53 @@
         body { background-color: #0f172a; color: #f8fafc; font-family: 'Inter', system-ui, sans-serif; }
         .navbar { background-color: #1e293b; border-bottom: 1px solid #334155; }
         .card { background-color: #1e293b; border: 1px solid #334155; border-radius: 12px; }
-        .video-container { border-radius: 10px; overflow: hidden; border: 2px solid #334155; background: #000; }
+        .video-container { 
+            position: relative; 
+            border-radius: 10px; 
+            overflow: hidden; 
+            border: 2px solid #334155; 
+            background: #000;
+            aspect-ratio: 4/3;
+            max-height: 480px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #webcam { width: 100%; height: 100%; object-fit: cover; }
+        #overlayCanvas { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            pointer-events: none; 
+        }
         .badge-roll { background-color: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); font-family: monospace; }
         .badge-subject { background-color: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+        .scanner-pill {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(4px);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 5;
+        }
+        .cam-prompt-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            text-align: center;
+            z-index: 10;
+        }
     </style>
 </head>
 <body>
@@ -49,20 +93,43 @@
                     </span>
                     <span class="badge badge-subject">{{ current_subject }}</span>
                 </div>
-                <div class="video-container text-center">
-                    <img src="{{ url_for('video_feed') }}" class="img-fluid w-100" alt="Camera Feed">
+                
+                <div class="video-container" id="videoWrapper">
+                    <video id="webcam" autoplay playsinline muted></video>
+                    <canvas id="overlayCanvas"></canvas>
+                    <div class="scanner-pill" id="camStatusBadge">
+                        <span class="spinner-grow spinner-grow-sm text-warning me-1"></span> Initializing...
+                    </div>
+
+                    <!-- Camera Unlock Overlay -->
+                    <div id="camPromptOverlay" class="cam-prompt-overlay" style="display: none;">
+                        <i class="bi bi-camera-video fs-1 text-primary mb-2"></i>
+                        <h6 class="fw-bold mb-1" id="promptTitle">Camera Permission Needed</h6>
+                        <p class="small text-secondary mb-3" id="promptDesc">Click below to activate your webcam.</p>
+                        <button type="button" class="btn btn-primary btn-sm px-4 py-2 mb-2" id="requestCamBtn" onclick="requestCameraExplicitly()">
+                            <i class="bi bi-camera me-1"></i> Enable Camera Access
+                        </button>
+                        <div id="camDiagDetails" class="small text-danger mt-2"></div>
+                    </div>
                 </div>
-                <div class="mt-3 small text-secondary d-flex justify-content-between align-items-center">
-                    <span><i class="bi bi-lightning-charge-fill text-warning"></i> Centroid Tracking Active</span>
-                    <span>
-                        Mode: 
-                        {% if anti_spoofing %}
-                        <span class="badge bg-success-subtle text-success border border-success-subtle">Kiosk (Blink ON)</span>
-                        {% else %}
-                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle">Crowd (Fast)</span>
-                        {% endif %}
-                    </span>
+
+                <div class="d-flex justify-content-between align-items-center mt-3">
+                    <button class="btn btn-outline-primary btn-sm" id="toggleCamBtn" onclick="toggleCamera()">
+                        <i class="bi bi-camera-video-fill me-1"></i> Pause Camera
+                    </button>
+                    <div class="small text-secondary">
+                        <span id="fpsBadge"><i class="bi bi-cpu text-info me-1"></i>AI Active</span>
+                        <span class="ms-2">
+                            {% if anti_spoofing %}
+                            <span class="badge bg-success-subtle text-success border border-success-subtle">Kiosk (Blink ON)</span>
+                            {% else %}
+                            <span class="badge bg-warning-subtle text-warning border border-warning-subtle">Crowd (Fast)</span>
+                            {% endif %}
+                        </span>
+                    </div>
                 </div>
+
+                <div id="liveAlertBox" class="mt-3"></div>
             </div>
         </div>
 
@@ -76,9 +143,9 @@
                             <div class="fw-bold small">Operating Mode</div>
                             <div class="text-secondary small">
                                 {% if anti_spoofing %}
-                                Anti-Spoofing active (EAR Blink Verification required)
+                                Anti-Spoofing Active (EAR Blink Verification required)
                                 {% else %}
-                                Fast Multi-Face recognition (Blink check disabled)
+                                Fast Multi-Face Recognition (Blink check disabled)
                                 {% endif %}
                             </div>
                         </div>
@@ -111,7 +178,7 @@
                 <div class="col-md-4">
                     <div class="card p-3 text-center">
                         <div class="text-secondary small text-uppercase mb-1"><i class="bi bi-check-circle-fill me-1"></i>Present Today</div>
-                        <div class="fs-2 fw-bold text-success">{{ today_present }}</div>
+                        <div class="fs-2 fw-bold text-success" id="presentCountEl">{{ today_present }}</div>
                     </div>
                 </div>
                 <div class="col-md-4">
@@ -153,7 +220,7 @@
                                 <th class="text-end">Action</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="attendanceTableBody">
                             {% for row in records %}
                             <tr>
                                 <td><span class="badge badge-roll px-2 py-1">{{ row[1] }}</span></td>
@@ -170,7 +237,7 @@
                                 </td>
                             </tr>
                             {% else %}
-                            <tr>
+                            <tr id="emptyRow">
                                 <td colspan="6" class="text-center text-secondary py-5">
                                     <i class="bi bi-inbox fs-2 d-block mb-2"></i>
                                     No attendance records found for this date/subject filter.
@@ -185,5 +252,217 @@
     </div>
 </div>
 
+<script>
+    let audioCtx = null;
+    function playBeep() {
+        try {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(2500, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.18, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.22);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.22);
+        } catch (e) {
+            console.error("Audio error:", e);
+        }
+    }
+
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('overlayCanvas');
+    const ctx = canvas.getContext('2d');
+    const camStatusBadge = document.getElementById('camStatusBadge');
+    const camPromptOverlay = document.getElementById('camPromptOverlay');
+    const promptTitle = document.getElementById('promptTitle');
+    const promptDesc = document.getElementById('promptDesc');
+    const camDiagDetails = document.getElementById('camDiagDetails');
+    const liveAlertBox = document.getElementById('liveAlertBox');
+
+    const sampleCanvas = document.createElement('canvas');
+    sampleCanvas.width = 360;
+    sampleCanvas.height = 270;
+    const sampleCtx = sampleCanvas.getContext('2d');
+
+    let cameraActive = true;
+    let isProcessing = false;
+    let processTimer = null;
+
+    async function initCamera() {
+        // Diagnostic 1: Check Secure Context (HTTPS or localhost)
+        if (window.isSecureContext === false) {
+            camPromptOverlay.style.display = 'flex';
+            promptTitle.innerText = "HTTPS or Localhost Required";
+            promptDesc.innerText = "Web browsers only allow camera access on HTTPS or http://localhost.";
+            camDiagDetails.innerHTML = "You are visiting via an insecure origin. Use <code>http://127.0.0.1:5000</code> in Google Chrome.";
+            camStatusBadge.className = 'scanner-pill text-danger';
+            camStatusBadge.innerHTML = '<i class="bi bi-shield-x me-1"></i> Insecure Context';
+            return;
+        }
+
+        // Diagnostic 2: Check mediaDevices support
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            camPromptOverlay.style.display = 'flex';
+            promptTitle.innerText = "Webcam API Not Supported In This Window";
+            promptDesc.innerText = "If using VS Code's embedded 'Simple Browser', please open in real Google Chrome or Edge.";
+            camDiagDetails.innerHTML = "<code>navigator.mediaDevices</code> is undefined in this webview.";
+            camStatusBadge.className = 'scanner-pill text-danger';
+            camStatusBadge.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i> Webview Unsupported';
+            return;
+        }
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
+                audio: false
+            });
+            camPromptOverlay.style.display = 'none';
+            video.srcObject = stream;
+            video.onloadedmetadata = () => {
+                video.play();
+                canvas.width = video.videoWidth || 640;
+                canvas.height = video.videoHeight || 480;
+                camStatusBadge.className = 'scanner-pill text-success';
+                camStatusBadge.innerHTML = '<i class="bi bi-circle-fill me-1"></i> Device Camera Live';
+                startInferenceLoop();
+            };
+        } catch (err) {
+            console.error("Camera access error:", err);
+            camPromptOverlay.style.display = 'flex';
+
+            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                promptTitle.innerText = "Camera Access Blocked in Browser";
+                promptDesc.innerText = "Please click the 🔒 lock or 📹 camera icon in your browser URL bar, change Camera to 'Allow', then refresh.";
+                camDiagDetails.innerText = "Error: Permission Denied by browser.";
+            } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+                promptTitle.innerText = "Camera Is Busy / In Use";
+                promptDesc.innerText = "Your camera is currently being used by another application or background Python script.";
+                camDiagDetails.innerText = "Error: Hardware device locked by another process.";
+            } else {
+                promptTitle.innerText = "Camera Request Failed";
+                promptDesc.innerText = err.message || "Please check camera permissions.";
+                camDiagDetails.innerText = `Error: ${err.name} - ${err.message}`;
+            }
+
+            camStatusBadge.className = 'scanner-pill text-warning';
+            camStatusBadge.innerHTML = '<i class="bi bi-camera-video me-1"></i> ' + err.name;
+        }
+    }
+
+    function requestCameraExplicitly() {
+        initCamera();
+    }
+
+    function toggleCamera() {
+        const btn = document.getElementById('toggleCamBtn');
+        cameraActive = !cameraActive;
+        if (cameraActive) {
+            btn.innerHTML = '<i class="bi bi-camera-video-fill me-1"></i> Pause Camera';
+            btn.className = 'btn btn-outline-primary btn-sm';
+        } else {
+            btn.innerHTML = '<i class="bi bi-play-circle-fill me-1"></i> Resume Camera';
+            btn.className = 'btn btn-outline-success btn-sm';
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+    }
+
+    function startInferenceLoop() {
+        if (processTimer) clearInterval(processTimer);
+        processTimer = setInterval(() => {
+            if (!cameraActive || isProcessing || video.readyState < 2) return;
+
+            isProcessing = true;
+            sampleCtx.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
+            const dataUrl = sampleCanvas.toDataURL('image/jpeg', 0.60);
+
+            fetch('/api/process_frame', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: dataUrl })
+            })
+            .then(res => res.json())
+            .then(data => {
+                isProcessing = false;
+                if (!cameraActive) return;
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                if (!data || !data.faces) return;
+
+                const scaleX = canvas.width / sampleCanvas.width;
+                const scaleY = canvas.height / sampleCanvas.height;
+
+                data.faces.forEach(face => {
+                    const x = face.x * scaleX;
+                    const y = face.y * scaleY;
+                    const w = face.w * scaleX;
+                    const h = face.h * scaleY;
+
+                    ctx.strokeStyle = face.color;
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(x, y, w, h);
+
+                    ctx.fillStyle = face.color;
+                    const labelText = `${face.label} (EAR: ${face.ear})`;
+                    ctx.font = '14px Inter, sans-serif';
+                    const textWidth = ctx.measureText(labelText).width;
+                    ctx.fillRect(x, Math.max(0, y - 24), textWidth + 12, 24);
+
+                    ctx.fillStyle = '#000000';
+                    ctx.fillText(labelText, x + 6, Math.max(16, y - 7));
+                });
+
+                if (data.event) {
+                    playBeep();
+                    liveAlertBox.innerHTML = `
+                        <div class="alert alert-success alert-dismissible fade show py-2 small d-flex align-items-center mb-0">
+                            <i class="bi bi-check-circle-fill fs-5 me-2"></i>
+                            <div><strong>Verified!</strong> ${data.event}</div>
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>`;
+
+                    setTimeout(() => {
+                        fetch('/api/attendance')
+                            .then(r => r.json())
+                            .then(records => {
+                                const tbody = document.getElementById('attendanceTableBody');
+                                if (records.length > 0) {
+                                    tbody.innerHTML = records.map(row => `
+                                        <tr>
+                                            <td><span class="badge badge-roll px-2 py-1">${row[1]}</span></td>
+                                            <td class="fw-semibold">${row[2]}</td>
+                                            <td><span class="badge badge-subject">${row[3]}</span></td>
+                                            <td class="text-secondary small">${row[4]}</td>
+                                            <td class="text-success small fw-semibold">${row[5]}</td>
+                                            <td class="text-end">
+                                                <form method="POST" action="/admin/delete_log/${row[0]}" class="d-inline">
+                                                    <button type="submit" class="btn btn-link text-danger p-0" title="Delete record">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                    `).join('');
+                                }
+                            });
+                    }, 800);
+                }
+            })
+            .catch(err => {
+                isProcessing = false;
+                console.error("Frame process error:", err);
+            });
+        }, 120);
+    }
+
+    window.addEventListener('load', initCamera);
+</script>
 </body>
 </html>
