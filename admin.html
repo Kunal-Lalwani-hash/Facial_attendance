@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Portal | AI Face Attendance</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: 'Inter', system-ui, sans-serif; }
+        .navbar { background-color: #1e293b; border-bottom: 1px solid #334155; }
+        .card { background-color: #1e293b; border: 1px solid #334155; border-radius: 12px; }
+        .form-control, .form-select { background-color: #0f172a; border-color: #334155; color: #f8fafc; }
+        .form-control:focus, .form-select:focus { background-color: #0f172a; border-color: #3b82f6; box-shadow: 0 0 0 0.25rem rgba(59, 130, 246, 0.25); color: #fff; }
+        .stat-card { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); }
+        .badge-roll { background-color: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); font-family: monospace; }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-dark px-4 py-3 mb-4">
+    <div class="container-fluid">
+        <a class="navbar-brand fw-bold d-flex align-items-center gap-2" href="/">
+            <i class="bi bi-person-bounding-box text-primary fs-4"></i>
+            <span>SmartAttend <span class="badge bg-primary ms-1">Admin</span></span>
+        </a>
+        <div class="d-flex gap-2">
+            <a href="/" class="btn btn-outline-light btn-sm d-flex align-items-center gap-2">
+                <i class="bi bi-camera-video"></i> Live Scanner & Logs
+            </a>
+        </div>
+    </div>
+</nav>
+
+<div class="container pb-5">
+    {% if message %}
+    <div class="alert alert-{{ 'success' if msg_type == 'success' else 'danger' }} alert-dismissible fade show d-flex align-items-center gap-2 mb-4" role="alert">
+        <i class="bi {{ 'bi-check-circle-fill' if msg_type == 'success' else 'bi-exclamation-triangle-fill' }}"></i>
+        <div>{{ message }}</div>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card stat-card p-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <p class="text-secondary small mb-1">Registered Students</p>
+                        <h3 class="fw-bold mb-0">{{ students|length }}</h3>
+                    </div>
+                    <div class="fs-1 text-primary opacity-50"><i class="bi bi-people-fill"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card stat-card p-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <p class="text-secondary small mb-1">Total Attendance Logs</p>
+                        <h3 class="fw-bold mb-0">{{ total_logs }}</h3>
+                    </div>
+                    <div class="fs-1 text-success opacity-50"><i class="bi bi-journal-check"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card stat-card p-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <p class="text-secondary small mb-1">Recognition Engine</p>
+                        <h5 class="fw-bold mb-0 text-info">dlib ResNet-v1 (128D)</h5>
+                    </div>
+                    <div class="fs-1 text-info opacity-50"><i class="bi bi-cpu-fill"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-5">
+            <div class="card p-4 mb-4">
+                <h5 class="fw-bold mb-1 d-flex align-items-center gap-2">
+                    <i class="bi bi-person-plus-fill text-primary"></i> Biometric Student Enrollment
+                </h5>
+                <p class="text-secondary small mb-4">Captures 10 rapid frames and computes the 128D facial descriptor automatically.</p>
+
+                <form method="POST" action="/admin" id="enrollForm">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-uppercase text-secondary">
+                            Roll Number <span class="text-danger">*</span>
+                        </label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-hash"></i></span>
+                            <input type="text" name="roll_no" class="form-control" 
+                                   placeholder="e.g., 23T7030" required 
+                                   pattern="[A-Za-z0-9]+" title="Alphanumeric Roll Number Required">
+                        </div>
+                        <div class="form-text text-secondary">Strictly required. Used as unique database primary key.</div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label small fw-semibold text-uppercase text-secondary">
+                            Student Full Name <span class="text-danger">*</span>
+                        </label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-person"></i></span>
+                            <input type="text" name="student_name" class="form-control" 
+                                   placeholder="e.g., Kunal Lalwani" required>
+                        </div>
+                        <div class="form-text text-secondary">Strictly required. Paired with Roll Number on display.</div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold d-flex justify-content-center align-items-center gap-2" id="submitBtn">
+                        <i class="bi bi-camera-fill"></i> Launch Camera & Train Model
+                    </button>
+                </form>
+            </div>
+
+            <div class="card p-4">
+                <h6 class="fw-bold mb-3 d-flex align-items-center gap-2">
+                    <i class="bi bi-pencil-square text-warning"></i> Manual Attendance Override
+                </h6>
+                <form method="POST" action="/admin/manual_log">
+                    <div class="row g-2 mb-2">
+                        <div class="col-5">
+                            <input type="text" name="roll_no" class="form-control form-control-sm" placeholder="Roll No (23T7030)" required>
+                        </div>
+                        <div class="col-7">
+                            <input type="text" name="student_name" class="form-control form-control-sm" placeholder="Student Name" required>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <select name="subject" class="form-select form-select-sm" required>
+                            {% for sub in subjects %}
+                            <option value="{{ sub }}">{{ sub }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-outline-warning btn-sm w-100">Mark Present Manually</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="col-lg-7">
+            <div class="card p-4 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0 d-flex align-items-center gap-2">
+                        <i class="bi bi-card-checklist text-success"></i> Enrolled Students Directory
+                    </h5>
+                    <span class="badge bg-secondary">{{ students|length }} Total</span>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover align-middle mb-0">
+                        <thead class="text-secondary small text-uppercase">
+                            <tr>
+                                <th>Roll Number</th>
+                                <th>Student Name</th>
+                                <th>Enrolled Timestamp</th>
+                                <th class="text-end">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for s in students %}
+                            <tr>
+                                <td><span class="badge badge-roll px-2 py-1">{{ s[0] }}</span></td>
+                                <td class="fw-semibold">{{ s[1] }}</td>
+                                <td class="text-secondary small">{{ s[2] }}</td>
+                                <td class="text-end">
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle">
+                                        <i class="bi bi-check2-circle"></i> 128D Ready
+                                    </span>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="4" class="text-center text-secondary py-4">
+                                    No students registered in SQLite directory yet. Enroll a student on the left.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    document.getElementById('enrollForm').addEventListener('submit', function() {
+        const btn = document.getElementById('submitBtn');
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Capturing 10 Frames & Extracting Features...';
+        btn.classList.add('disabled');
+    });
+</script>
+</body>
+</html>

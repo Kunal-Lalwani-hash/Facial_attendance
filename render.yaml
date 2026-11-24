@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: smartattend-face-attendance
+    runtime: docker
+    plan: starter
+    region: oregon
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: SECRET_KEY
+        generateValue: true
